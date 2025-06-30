@@ -14,6 +14,7 @@ use solana_sdk::{
 use std::convert::TryInto;
 use std::str::FromStr;
 use crate::models::response::ApiResponse;
+use crate::utils::validate_required_string;
 
 pub fn message_routes() -> Router {
     Router::new()
@@ -48,31 +49,36 @@ struct VerifyMessageResponse {
     pubkey: String,
 }
 
+// Helper function to validate and decode base58 secret key
+fn validate_secret_key(secret: &str) -> Result<Keypair, String> {
+    let secret_bytes = bs58::decode(secret)
+        .into_vec()
+        .map_err(|_| "Invalid base58 secret key".to_string())?;
+
+    if secret_bytes.len() != 64 {
+        return Err("Invalid secret key length".to_string());
+    }
+
+    Keypair::from_bytes(&secret_bytes)
+        .map_err(|_| "Invalid keypair from secret key".to_string())
+}
+
 async fn sign_message(
     Json(body): Json<SignMessageRequest>,
 ) -> impl IntoResponse {
-    let message = match body.message {
-        Some(ref s) => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let message = match validate_required_string(&body.message, "message") {
+        Ok(m) => m,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let secret = match body.secret {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let secret = match validate_required_string(&body.secret, "secret") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let secret_bytes = match bs58::decode(secret).into_vec() {
-        Ok(bytes) => bytes,
-        Err(_) => return ApiResponse::Error("Invalid base58 secret key".to_string()),
-    };
-
-    if secret_bytes.len() != 64 {
-        return ApiResponse::Error("Invalid secret key length".to_string());
-    }
-
-    let keypair = match Keypair::from_bytes(&secret_bytes) {
+    let keypair = match validate_secret_key(&secret) {
         Ok(kp) => kp,
-        Err(_) => return ApiResponse::Error("Invalid keypair from secret key".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
     let message_bytes = message.as_bytes();
@@ -84,29 +90,29 @@ async fn sign_message(
     ApiResponse::Success(SignMessageResponse {
         signature: signature_base64,
         public_key,
-        message: message.to_string(),
+        message,
     })
 }
 
 async fn verify_message(
     Json(body): Json<VerifyMessageRequest>,
 ) -> impl IntoResponse {
-    let message = match body.message {
-        Some(ref s) => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let message = match validate_required_string(&body.message, "message") {
+        Ok(m) => m,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let signature_str = match body.signature {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let signature_str = match validate_required_string(&body.signature, "signature") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let pubkey_str = match body.pubkey {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let pubkey_str = match validate_required_string(&body.pubkey, "pubkey") {
+        Ok(p) => p,
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let signature_bytes = match general_purpose::STANDARD.decode(signature_str) {
+    let signature_bytes = match general_purpose::STANDARD.decode(&signature_str) {
         Ok(bytes) => bytes,
         Err(_) => return ApiResponse::Error("Invalid base64 signature".to_string()),
     };
@@ -118,7 +124,7 @@ async fn verify_message(
 
     let signature = Signature::from(signature_array);
 
-    let pubkey = match Pubkey::from_str(pubkey_str) {
+    let pubkey = match Pubkey::from_str(&pubkey_str) {
         Ok(pk) => pk,
         Err(_) => return ApiResponse::Error("Invalid base58 public key".to_string()),
     };
@@ -128,7 +134,7 @@ async fn verify_message(
 
     ApiResponse::Success(VerifyMessageResponse {
         valid: is_valid,
-        message: message.to_string(),
-        pubkey: pubkey_str.to_string(),
+        message,
+        pubkey: pubkey_str,
     })
 }

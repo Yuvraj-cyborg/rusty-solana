@@ -5,11 +5,10 @@ use axum::{
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
-use solana_sdk::pubkey::Pubkey;
 use spl_token::instruction::{initialize_mint, mint_to};
 use crate::models::response::{ApiResponse};
-use std::str::FromStr;
 use base64::{engine::general_purpose, Engine as _};
+use crate::utils::{validate_required_string, validate_pubkey, validate_amount, validate_required_numeric};
 
 #[derive(Deserialize)]
 struct CreateTokenRequest {
@@ -33,45 +32,69 @@ struct TokenInstructionResponse {
     instruction_data: String,
 }
 
+#[derive(Deserialize)]
+struct MintTokenRequest {
+    mint: Option<String>,
+    destination: Option<String>,
+    authority: Option<String>,
+    amount: Option<u64>,
+}
+
 pub fn token_routes() -> Router {
     Router::new()
         .route("/token/create", post(create_token))
         .route("/token/mint", post(mint_token))
 }
 
+// Helper function to create instruction response
+fn create_instruction_response(instruction: solana_sdk::instruction::Instruction) -> TokenInstructionResponse {
+    let accounts: Vec<AccountMetaResponse> = instruction.accounts.into_iter()
+        .map(|a| AccountMetaResponse {
+            pubkey: a.pubkey.to_string(),
+            is_signer: a.is_signer,
+            is_writable: a.is_writable,
+        })
+        .collect();
+
+    let encoded = general_purpose::STANDARD.encode(instruction.data);
+
+    TokenInstructionResponse {
+        program_id: instruction.program_id.to_string(),
+        accounts,
+        instruction_data: encoded,
+    }
+}
+
 async fn create_token(
     Json(body): Json<CreateTokenRequest>,
 ) -> impl IntoResponse {
-    // Validate required fields
-    let mint_authority_str = match body.mint_authority {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let mint_authority_str = match validate_required_string(&body.mint_authority, "mintAuthority") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let mint_str = match body.mint {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let mint_str = match validate_required_string(&body.mint, "mint") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let decimals = match body.decimals {
-        Some(d) => d,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let decimals = match validate_required_numeric(&body.decimals, "decimals") {
+        Ok(d) => d,
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let mint_authority = match Pubkey::from_str(mint_authority_str) {
+    let mint_authority = match validate_pubkey(&mint_authority_str, "mintAuthority") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid mint authority address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let mint = match Pubkey::from_str(mint_str) {
+    let mint = match validate_pubkey(&mint_str, "mint") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid mint address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
-
-    let token_program_id = spl_token::id();
 
     let ix = match initialize_mint(
-        &token_program_id,
+        &spl_token::id(),
         &mint,
         &mint_authority,
         None,
@@ -81,69 +104,45 @@ async fn create_token(
         Err(_) => return ApiResponse::Error("Failed to create mint instruction".to_string()),
     };
 
-    let accounts: Vec<AccountMetaResponse> = ix.accounts.into_iter()
-        .map(|a| AccountMetaResponse {
-            pubkey: a.pubkey.to_string(),
-            is_signer: a.is_signer,
-            is_writable: a.is_writable,
-        })
-        .collect();
-
-    let encoded = general_purpose::STANDARD.encode(ix.data);
-
-    ApiResponse::Success(TokenInstructionResponse {
-        program_id: ix.program_id.to_string(),
-        accounts,
-        instruction_data: encoded,
-    })
-}
-
-#[derive(Deserialize)]
-struct MintTokenRequest {
-    mint: Option<String>,
-    destination: Option<String>,
-    authority: Option<String>,
-    amount: Option<u64>,
+    ApiResponse::Success(create_instruction_response(ix))
 }
 
 async fn mint_token(
     Json(body): Json<MintTokenRequest>,
 ) -> impl IntoResponse {
-    // Validate required fields
-    let mint_str = match body.mint {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let mint_str = match validate_required_string(&body.mint, "mint") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let destination_str = match body.destination {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let destination_str = match validate_required_string(&body.destination, "destination") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let authority_str = match body.authority {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let authority_str = match validate_required_string(&body.authority, "authority") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let amount = match body.amount {
-        Some(a) if a > 0 => a,
-        Some(0) => return ApiResponse::Error("Amount must be greater than 0".to_string()),
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let amount = match validate_amount(body.amount, "amount") {
+        Ok(a) => a,
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let mint = match Pubkey::from_str(mint_str) {
+    let mint = match validate_pubkey(&mint_str, "mint") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid mint address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let destination = match Pubkey::from_str(destination_str) {
+    let destination = match validate_pubkey(&destination_str, "destination") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid destination address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let authority = match Pubkey::from_str(authority_str) {
+    let authority = match validate_pubkey(&authority_str, "authority") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid authority address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
     // Associated token address for the destination and mint
@@ -161,19 +160,5 @@ async fn mint_token(
         Err(_) => return ApiResponse::Error("Failed to create mint instruction".to_string()),
     };
 
-    let accounts: Vec<AccountMetaResponse> = ix.accounts.into_iter()
-        .map(|a| AccountMetaResponse {
-            pubkey: a.pubkey.to_string(),
-            is_signer: a.is_signer,
-            is_writable: a.is_writable,
-        })
-        .collect();
-
-    let encoded = general_purpose::STANDARD.encode(ix.data);
-
-    ApiResponse::Success(TokenInstructionResponse {
-        program_id: ix.program_id.to_string(),
-        accounts,
-        instruction_data: encoded,
-    })
+    ApiResponse::Success(create_instruction_response(ix))
 }

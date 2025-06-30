@@ -1,0 +1,14 @@
+{
+    "$schema": "https://railway.com/railway.schema.json",
+    "build": {
+      "builder": "NIXPACKS",
+      "buildCommand": "cargo build --release"
+    },
+    "deploy": {
+      "runtime": "V2",
+      "startCommand": "./target/release/rusty-proc",
+      "restartPolicyType": "ON_FAILURE",
+      "restartPolicyMaxRetries": 10
+    }
+  }
+  

@@ -1,13 +1,10 @@
-use std::str::FromStr;
 use axum::{Router, Json, routing::post, response::IntoResponse};
 use serde::{Deserialize, Serialize};
-use solana_sdk::{
-    pubkey::Pubkey,
-    system_instruction,
-};
+use solana_sdk::system_instruction;
 use spl_token::instruction::transfer;
 use base64::{engine::general_purpose, Engine as _};
 use crate::models::response::ApiResponse;
+use crate::utils::{validate_required_string, validate_pubkey, validate_amount};
 
 pub fn send_routes() -> Router {
     Router::new()
@@ -54,30 +51,29 @@ struct SendTokenResponse {
 async fn send_sol(
     Json(body): Json<SendSolRequest>,
 ) -> impl IntoResponse {
-    let from_str = match body.from {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let from_str = match validate_required_string(&body.from, "from") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let to_str = match body.to {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let to_str = match validate_required_string(&body.to, "to") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let lamports = match body.lamports {
-        Some(l) if l > 0 => l,
-        Some(0) => return ApiResponse::Error("Amount must be greater than 0".to_string()),
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let lamports = match validate_amount(body.lamports, "lamports") {
+        Ok(a) => a,
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let from_pubkey = match Pubkey::from_str(from_str) {
+    let from_pubkey = match validate_pubkey(&from_str, "from") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid 'from' address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let to_pubkey = match Pubkey::from_str(to_str) {
+    let to_pubkey = match validate_pubkey(&to_str, "to") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid 'to' address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
     let instruction = system_instruction::transfer(&from_pubkey, &to_pubkey, lamports);
@@ -99,40 +95,39 @@ async fn send_sol(
 async fn send_token(
     Json(body): Json<SendTokenRequest>,
 ) -> impl IntoResponse {
-    let destination_str = match body.destination {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let destination_str = match validate_required_string(&body.destination, "destination") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let mint_str = match body.mint {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let mint_str = match validate_required_string(&body.mint, "mint") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let owner_str = match body.owner {
-        Some(ref s) if !s.is_empty() => s,
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let owner_str = match validate_required_string(&body.owner, "owner") {
+        Ok(s) => s,
+        Err(e) => return ApiResponse::Error(e),
     };
     
-    let amount = match body.amount {
-        Some(a) if a > 0 => a,
-        Some(0) => return ApiResponse::Error("Amount must be greater than 0".to_string()),
-        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    let amount = match validate_amount(body.amount, "amount") {
+        Ok(a) => a,
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let destination = match Pubkey::from_str(destination_str) {
+    let destination = match validate_pubkey(&destination_str, "destination") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid destination address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let mint = match Pubkey::from_str(mint_str) {
+    let mint = match validate_pubkey(&mint_str, "mint") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid mint address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
-    let owner = match Pubkey::from_str(owner_str) {
+    let owner = match validate_pubkey(&owner_str, "owner") {
         Ok(pk) => pk,
-        Err(_) => return ApiResponse::Error("Invalid owner address".to_string()),
+        Err(e) => return ApiResponse::Error(e),
     };
 
     let source_ata = spl_associated_token_account::get_associated_token_address(&owner, &mint);
@@ -150,12 +145,20 @@ async fn send_token(
         Err(_) => return ApiResponse::Error("Failed to create transfer instruction".to_string()),
     };
 
-    let accounts: Vec<AccountInfo> = instruction.accounts.into_iter()
-        .map(|a| AccountInfo {
-            pubkey: a.pubkey.to_string(),
-            is_signer: a.is_signer,
-        })
-        .collect();
+    let accounts: Vec<AccountInfo> = vec![
+        AccountInfo { // Source ATA
+            pubkey: instruction.accounts[0].pubkey.to_string(),
+            is_signer: false,
+        },
+        AccountInfo { // Destination ATA
+            pubkey: instruction.accounts[1].pubkey.to_string(),
+            is_signer: false,
+        },
+        AccountInfo { // Owner
+            pubkey: instruction.accounts[2].pubkey.to_string(),
+            is_signer: true,
+        },
+    ];
 
     let instruction_data = general_purpose::STANDARD.encode(&instruction.data);
 

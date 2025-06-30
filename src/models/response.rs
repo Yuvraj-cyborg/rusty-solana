@@ -37,14 +37,3 @@ impl<T: Serialize> IntoResponse for ApiResponse<T> {
         }
     }
 }
-
-pub fn json_success<T: Serialize>(data: T) -> Json<SuccessResponse<T>> {
-    Json(SuccessResponse { success: true, data })
-}
-
-pub fn json_error(msg: &str) -> Json<ErrorResponse> {
-    Json(ErrorResponse {
-        success: false,
-        error: msg.to_string(),
-    })
-}
