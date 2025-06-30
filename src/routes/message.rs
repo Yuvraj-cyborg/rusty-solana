@@ -23,8 +23,8 @@ pub fn message_routes() -> Router {
 
 #[derive(Deserialize)]
 struct SignMessageRequest {
-    message: String,
-    secret: String,
+    message: Option<String>,
+    secret: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -36,9 +36,9 @@ struct SignMessageResponse {
 
 #[derive(Deserialize)]
 struct VerifyMessageRequest {
-    message: String,
-    signature: String,
-    pubkey: String,
+    message: Option<String>,
+    signature: Option<String>,
+    pubkey: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -51,11 +51,17 @@ struct VerifyMessageResponse {
 async fn sign_message(
     Json(body): Json<SignMessageRequest>,
 ) -> impl IntoResponse {
-    if body.message.is_empty() || body.secret.is_empty() {
-        return ApiResponse::Error("Missing required fields".to_string());
-    }
+    let message = match body.message {
+        Some(ref s) => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let secret = match body.secret {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
 
-    let secret_bytes = match bs58::decode(&body.secret).into_vec() {
+    let secret_bytes = match bs58::decode(secret).into_vec() {
         Ok(bytes) => bytes,
         Err(_) => return ApiResponse::Error("Invalid base58 secret key".to_string()),
     };
@@ -69,7 +75,7 @@ async fn sign_message(
         Err(_) => return ApiResponse::Error("Invalid keypair from secret key".to_string()),
     };
 
-    let message_bytes = body.message.as_bytes();
+    let message_bytes = message.as_bytes();
     let signature = keypair.sign_message(message_bytes);
     
     let signature_base64 = general_purpose::STANDARD.encode(signature.as_ref());
@@ -78,18 +84,29 @@ async fn sign_message(
     ApiResponse::Success(SignMessageResponse {
         signature: signature_base64,
         public_key,
-        message: body.message,
+        message: message.to_string(),
     })
 }
 
 async fn verify_message(
     Json(body): Json<VerifyMessageRequest>,
 ) -> impl IntoResponse {
-    if body.message.is_empty() || body.signature.is_empty() || body.pubkey.is_empty() {
-        return ApiResponse::Error("Missing required fields".to_string());
-    }
+    let message = match body.message {
+        Some(ref s) => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let signature_str = match body.signature {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let pubkey_str = match body.pubkey {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
 
-    let signature_bytes = match general_purpose::STANDARD.decode(&body.signature) {
+    let signature_bytes = match general_purpose::STANDARD.decode(signature_str) {
         Ok(bytes) => bytes,
         Err(_) => return ApiResponse::Error("Invalid base64 signature".to_string()),
     };
@@ -101,17 +118,17 @@ async fn verify_message(
 
     let signature = Signature::from(signature_array);
 
-    let pubkey = match Pubkey::from_str(&body.pubkey) {
+    let pubkey = match Pubkey::from_str(pubkey_str) {
         Ok(pk) => pk,
         Err(_) => return ApiResponse::Error("Invalid base58 public key".to_string()),
     };
 
-    let message_bytes = body.message.as_bytes();
+    let message_bytes = message.as_bytes();
     let is_valid = signature.verify(&pubkey.to_bytes(), message_bytes);
 
     ApiResponse::Success(VerifyMessageResponse {
         valid: is_valid,
-        message: body.message,
-        pubkey: body.pubkey,
+        message: message.to_string(),
+        pubkey: pubkey_str.to_string(),
     })
 }

@@ -13,9 +13,10 @@ use base64::{engine::general_purpose, Engine as _};
 
 #[derive(Deserialize)]
 struct CreateTokenRequest {
-    mintAuthority: String,
-    mint: String,
-    decimals: u8,
+    #[serde(rename = "mintAuthority")]
+    mint_authority: Option<String>,
+    mint: Option<String>,
+    decimals: Option<u8>,
 }
 
 #[derive(Serialize)]
@@ -41,12 +42,28 @@ pub fn token_routes() -> Router {
 async fn create_token(
     Json(body): Json<CreateTokenRequest>,
 ) -> impl IntoResponse {
-    let mint_authority = match Pubkey::from_str(&body.mintAuthority) {
+    // Validate required fields
+    let mint_authority_str = match body.mint_authority {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let mint_str = match body.mint {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let decimals = match body.decimals {
+        Some(d) => d,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+
+    let mint_authority = match Pubkey::from_str(mint_authority_str) {
         Ok(pk) => pk,
         Err(_) => return ApiResponse::Error("Invalid mint authority address".to_string()),
     };
 
-    let mint = match Pubkey::from_str(&body.mint) {
+    let mint = match Pubkey::from_str(mint_str) {
         Ok(pk) => pk,
         Err(_) => return ApiResponse::Error("Invalid mint address".to_string()),
     };
@@ -58,7 +75,7 @@ async fn create_token(
         &mint,
         &mint_authority,
         None,
-        body.decimals,
+        decimals,
     ) {
         Ok(instruction) => instruction,
         Err(_) => return ApiResponse::Error("Failed to create mint instruction".to_string()),
@@ -83,33 +100,51 @@ async fn create_token(
 
 #[derive(Deserialize)]
 struct MintTokenRequest {
-    mint: String,
-    destination: String,
-    authority: String,
-    amount: u64,
+    mint: Option<String>,
+    destination: Option<String>,
+    authority: Option<String>,
+    amount: Option<u64>,
 }
 
 async fn mint_token(
     Json(body): Json<MintTokenRequest>,
 ) -> impl IntoResponse {
-    let mint = match Pubkey::from_str(&body.mint) {
+    // Validate required fields
+    let mint_str = match body.mint {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let destination_str = match body.destination {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let authority_str = match body.authority {
+        Some(ref s) if !s.is_empty() => s,
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+    
+    let amount = match body.amount {
+        Some(a) if a > 0 => a,
+        Some(0) => return ApiResponse::Error("Amount must be greater than 0".to_string()),
+        _ => return ApiResponse::Error("Missing required fields".to_string()),
+    };
+
+    let mint = match Pubkey::from_str(mint_str) {
         Ok(pk) => pk,
         Err(_) => return ApiResponse::Error("Invalid mint address".to_string()),
     };
 
-    let destination = match Pubkey::from_str(&body.destination) {
+    let destination = match Pubkey::from_str(destination_str) {
         Ok(pk) => pk,
         Err(_) => return ApiResponse::Error("Invalid destination address".to_string()),
     };
 
-    let authority = match Pubkey::from_str(&body.authority) {
+    let authority = match Pubkey::from_str(authority_str) {
         Ok(pk) => pk,
         Err(_) => return ApiResponse::Error("Invalid authority address".to_string()),
     };
-
-    if body.amount == 0 {
-        return ApiResponse::Error("Amount must be greater than 0".to_string());
-    }
 
     // Associated token address for the destination and mint
     let destination_ata = spl_associated_token_account::get_associated_token_address(&destination, &mint);
@@ -120,7 +155,7 @@ async fn mint_token(
         &destination_ata,
         &authority,
         &[],
-        body.amount,
+        amount,
     ) {
         Ok(instruction) => instruction,
         Err(_) => return ApiResponse::Error("Failed to create mint instruction".to_string()),
