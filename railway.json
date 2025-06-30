@@ -1,7 +1,7 @@
 {
     "build": {
       "builder": "NIXPACKS",
-      "buildCommand": "cargo build --release && mkdir -p bin && cp target/release/rusty-proc bin/"
+      "buildCommand": "cargo build --release && mkdir -p bin && cp target/release/rusty-proc bin/ && ls -la bin/"
     },
     "deploy": {
       "runtime": "V2",
