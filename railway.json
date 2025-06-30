@@ -1,12 +1,12 @@
 {
     "build": {
       "builder": "NIXPACKS",
-      "buildCommand": "cargo build --release && mkdir -p /app/bin && cp target/release/rusty-proc /app/bin/rusty-proc"
+      "buildCommand": "cargo build --release --target x86_64-unknown-linux-musl"
     },
     "deploy": {
       "runtime": "V2",
       "numReplicas": 1,
-      "startCommand": "./bin/rusty-proc",
+      "startCommand": "./target/x86_64-unknown-linux-musl/release/rusty-proc",
       "sleepApplication": false,
       "restartPolicyType": "ON_FAILURE",
       "restartPolicyMaxRetries": 10
