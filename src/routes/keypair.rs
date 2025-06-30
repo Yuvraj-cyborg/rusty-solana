@@ -5,7 +5,6 @@ use axum::{
 };
 use solana_sdk::signature::{Keypair, Signer};
 use bs58;
-use crate::models::response::{json_success, json_error};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -18,14 +17,15 @@ pub fn keypair_routes() -> Router {
     Router::new().route("/keypair", post(generate_keypair))
 }
 
-async fn generate_keypair() -> Json<impl serde::Serialize> {
+async fn generate_keypair() -> Json<KeypairResponse> {
     let keypair = Keypair::new();
 
+    let secret_key_bytes = keypair.to_bytes(); // 64 bytes [secret || pubkey]
+    let secret_base58 = bs58::encode(secret_key_bytes).into_string();
     let pubkey = keypair.pubkey().to_string();
-    let secret = bs58::encode(keypair.to_bytes()).into_string();
 
     Json(KeypairResponse {
         pubkey,
-        secret,
+        secret: secret_base58,
     })
 }

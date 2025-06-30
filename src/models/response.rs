@@ -1,4 +1,5 @@
 use serde::Serialize;
+use axum::{response::{IntoResponse, Response}, Json, http::StatusCode};
 
 #[derive(Serialize)]
 pub struct SuccessResponse<T> {
@@ -12,12 +13,37 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
-pub fn json_success<T: Serialize>(data: T) -> axum::Json<SuccessResponse<T>> {
-    axum::Json(SuccessResponse { success: true, data })
+#[derive(Debug)]
+pub enum ApiResponse<T> {
+    Success(T),
+    Error(String),
 }
 
-pub fn json_error(msg: &str) -> axum::Json<ErrorResponse> {
-    axum::Json(ErrorResponse {
+impl<T: Serialize> IntoResponse for ApiResponse<T> {
+    fn into_response(self) -> Response {
+        match self {
+            ApiResponse::Success(data) => {
+                (StatusCode::OK, Json(SuccessResponse {
+                    success: true,
+                    data,
+                })).into_response()
+            }
+            ApiResponse::Error(error) => {
+                (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+                    success: false,
+                    error,
+                })).into_response()
+            }
+        }
+    }
+}
+
+pub fn json_success<T: Serialize>(data: T) -> Json<SuccessResponse<T>> {
+    Json(SuccessResponse { success: true, data })
+}
+
+pub fn json_error(msg: &str) -> Json<ErrorResponse> {
+    Json(ErrorResponse {
         success: false,
         error: msg.to_string(),
     })

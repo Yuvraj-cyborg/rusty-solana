@@ -4,13 +4,19 @@ mod utils;
 
 use axum::{routing::get, Router};
 use routes::keypair::keypair_routes;
+use routes::token::token_routes;
+use routes::message::message_routes;
+use routes::send::send_routes;
 use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() {
     let app = Router::new()
         .route("/", get(root))
-        .merge(keypair_routes()); // add more later
+        .merge(keypair_routes())
+        .merge(token_routes())
+        .merge(message_routes())
+        .merge(send_routes());
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Server running at http://{}", addr);
