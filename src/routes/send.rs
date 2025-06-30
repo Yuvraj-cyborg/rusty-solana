@@ -42,8 +42,6 @@ struct AccountInfo {
     pubkey: String,
     #[serde(rename = "isSigner")]
     is_signer: bool,
-    #[serde(rename = "isWritable")]
-    is_writable: bool,
 }
 
 #[derive(Serialize)]
@@ -156,7 +154,6 @@ async fn send_token(
         .map(|a| AccountInfo {
             pubkey: a.pubkey.to_string(),
             is_signer: a.is_signer,
-            is_writable: a.is_writable,
         })
         .collect();
 
